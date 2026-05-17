@@ -1,0 +1,69 @@
+name: Deploy NGINX to GKE
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Install GKE Auth Plugin
+        run: gcloud components install gke-gcloud-auth-plugin
+
+      - name: Get GKE Cluster Credentials
+        run: |
+          gcloud container clusters get-credentials devops-junction-cluster \
+            --region us-central1 \
+            --project ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Deploy NGINX
+        run: |
+          kubectl create deployment nginx --image=nginx --dry-run=client -o yaml | kubectl apply -f -
+          kubectl expose deployment nginx --type=LoadBalancer --port=80 --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Verify Deployment
+        run: |
+          echo "Waiting for deployment to be ready..."
+          kubectl rollout status deployment/nginx --timeout=5m
+          echo ""
+          echo "=== Deployment Status ==="
+          kubectl get deployments
+          echo ""
+          echo "=== Pods Status ==="
+          kubectl get pods
+          echo ""
+          echo "=== Service Status ==="
+          kubectl get svc nginx
+
+      - name: Get NGINX External IP
+        run: |
+          echo "=== NGINX Service Details ==="
+          kubectl get svc nginx -o wide
+          echo ""
+          EXTERNAL_IP=$(kubectl get svc nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+          if [ -z "$EXTERNAL_IP" ]; then
+            echo "External IP is still being assigned, check back in a moment..."
+          else
+            echo "NGINX is accessible at: http://$EXTERNAL_IP"
+          fi

@@ -1,0 +1,74 @@
+name: Deploy NGINX to GKE (Using Manifest)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'k8s/**'
+      - '.github/workflows/deploy-nginx-manifest.yml'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Install GKE Auth Plugin
+        run: gcloud components install gke-gcloud-auth-plugin
+
+      - name: Get GKE Cluster Credentials
+        run: |
+          gcloud container clusters get-credentials devops-junction-cluster \
+            --region us-central1 \
+            --project ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Deploy NGINX from Manifest
+        run: kubectl apply -f k8s/nginx-deployment.yaml
+
+      - name: Verify Deployment
+        run: |
+          echo "Waiting for deployment to be ready..."
+          kubectl rollout status deployment/nginx --timeout=5m
+          echo ""
+          echo "=== Deployment Status ==="
+          kubectl get deployments
+          echo ""
+          echo "=== Pods Status ==="
+          kubectl get pods -l app=nginx
+          echo ""
+          echo "=== Service Status ==="
+          kubectl get svc nginx-service
+
+      - name: Get NGINX External IP
+        run: |
+          echo "=== NGINX Service Details ==="
+          kubectl get svc nginx-service -o wide
+          echo ""
+          echo "Checking for external IP assignment..."
+          for i in {1..30}; do
+            EXTERNAL_IP=$(kubectl get svc nginx-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+            if [ -n "$EXTERNAL_IP" ]; then
+              echo "NGINX is accessible at: http://$EXTERNAL_IP"
+              break
+            fi
+            echo "Attempt $i: Waiting for external IP..."
+            sleep 2
+          done

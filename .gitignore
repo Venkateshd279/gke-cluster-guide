@@ -1,0 +1,29 @@
+# GCP credentials & keys
+*.json
+*-key.json
+service-account*.json
+gcp-credentials*
+.gcp/
+
+# Environment variables
+.env
+.env.*
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
